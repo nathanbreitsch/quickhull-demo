@@ -4,6 +4,8 @@ function ViewModel(){
   self.pointString = ko.observable("25,50\n50,75\n75,25");
   self.svg = null;
 
+  self.hullEdges = ko.observableArray();
+
   self.points = ko.computed(function(){
     return self.pointString().split('\n')
                 .map(function(line){
@@ -19,8 +21,11 @@ function ViewModel(){
                 });
   });
 
+
+
   self.pointString.subscribe(function(oldValue, newValue){
-    self.drawPoints();
+    self.hullEdges([]);
+    self.draw();
   });
 
   self.add20RandomPoints = function(){
@@ -40,10 +45,11 @@ function ViewModel(){
       return d.join(',');
     }).join('\n');
     self.pointString(self.pointString() + '\n' +  pointString );
-    self.drawPoints();
+    self.draw();
   }
 
-  self.drawPoints = function(){
+
+  self.draw = function(){
 
     var width = $("#vis").width();
     var height = $(window).height() * 0.8;
@@ -78,12 +84,60 @@ function ViewModel(){
 
     points.exit().remove();
 
+    var edges = self.svg.selectAll('.edges')
+                         .data(self.hullEdges());
+
+    edges.enter().append("line");
+
+    edges.attr('x1', function(d){
+      return (d[0] - xMin) / ((xMax - xMin) || 1) * (width - 2*xMargin) + xMargin;
+    }).attr('y1', function(d){
+      return (d[1] - yMin) / ((yMax - yMin) || 1) * (height - 2*yMargin) + yMargin;
+    }).attr('x2', function(d){
+      return (d[2] - xMin) / ((xMax - xMin) || 1) * (width - 2*xMargin) + xMargin;
+    }).attr('y2', function(d){
+      return (d[3] - yMin) / ((yMax - yMin) || 1) * (height - 2*yMargin) + yMargin;
+    }).attr("stroke-width", 2).attr("stroke", "black").attr('class', 'edges');
+
+    edges.exit().remove();
+
   };
+
+  self.getConvexHull = function(){
+
+  var xhttp = new XMLHttpRequest();
+  var url = 'https://upxfqmcp10.execute-api.us-east-1.amazonaws.com/prod/quickconvexhull';
+
+  if(xhttp) {
+    xhttp.open('POST', url, true);
+
+    //invocation.withCredentials = false;
+    xhttp.onreadystatechange = function(){
+      if(xhttp.readyState === XMLHttpRequest.DONE && xhttp.status === 200){
+        var response = xhttp.responseText.replace(/\"/g, "");
+        console.log(response);
+        var hullEdges = response.split(';')
+          .map(function(pointString){
+          return pointString.split(",").map(function(d){return parseFloat(d);});
+        });
+        self.hullEdges(hullEdges);
+        self.draw();
+
+      }
+
+    };
+    xhttp.send("\"" + self.pointString().replace(/\n/g, ";") + "\"");
+  }
+
+  };
+
 }
+
+
 
 $(function(){
   var viewModel = new ViewModel();
   viewModel.svg = d3.select("#vis").append('svg');
-  viewModel.drawPoints();
+  viewModel.draw();
   ko.applyBindings(viewModel);
 })
