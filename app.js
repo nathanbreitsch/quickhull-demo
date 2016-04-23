@@ -1,10 +1,13 @@
 
+var ANIMATION_DELAY = 1500;
+
 function ViewModel(){
   var self = this;
   self.pointString = ko.observable("25,50\n50,75\n75,25");
   self.svg = null;
 
   self.hullEdges = ko.observableArray();
+  self.steps = ko.observableArray([]);
 
   self.points = ko.computed(function(){
     return self.pointString().split('\n')
@@ -25,6 +28,7 @@ function ViewModel(){
 
   self.pointString.subscribe(function(oldValue, newValue){
     self.hullEdges([]);
+    self.steps([]);
     self.draw();
   });
 
@@ -49,6 +53,7 @@ function ViewModel(){
   }
 
 
+
   self.draw = function(){
 
     var width = $("#vis").width();
@@ -66,6 +71,8 @@ function ViewModel(){
     var yRange = yMax - yMin;
     var yMargin = 0.1 * yRange + 50;
     var xMargin = 0.1 * xRange + 50;
+
+
 
 
     var points = self.svg.selectAll('.point')
@@ -101,37 +108,125 @@ function ViewModel(){
 
     edges.exit().remove();
 
+
+    self.svg.selectAll('.animation-edges').remove();
+    self.svg.selectAll('.animation-points').remove();
+
+
+    self.steps().forEach(function(step, stepIndex){
+      var animationEdges = self.svg.selectAll('.animation-edges')
+                           .data(step);
+      animationEdges.enter().append("line");
+      animationEdges.exit().remove();
+
+      animationEdges = animationEdges.attr("stroke-width", 2).attr("stroke", "red")
+      .transition().duration(ANIMATION_DELAY).delay(ANIMATION_DELAY*(stepIndex + 1));
+
+      if(stepIndex < self.steps().length - 1){ animationEdges = animationEdges.remove(); }
+
+      animationEdges.attr('x1', function(d){
+        return (d[0] - xMin) / ((xMax - xMin) || 1) * (width - 2*xMargin) + xMargin;
+      }).attr('y1', function(d){
+        return (d[1] - yMin) / ((yMax - yMin) || 1) * (height - 2*yMargin) + yMargin;
+      }).attr('x2', function(d){
+        return (d[2] - xMin) / ((xMax - xMin) || 1) * (width - 2*xMargin) + xMargin;
+      }).attr('y2', function(d){
+        return (d[3] - yMin) / ((yMax - yMin) || 1) * (height - 2*yMargin) + yMargin;
+      }).attr("stroke-width", 2).attr('class', 'animation-edges');
+
+
+      var animationPoints = self.svg.selectAll('.animation-points').data(step);
+      animationPoints.enter().append("circle");
+
+      animationPoints.transition().duration(ANIMATION_DELAY).delay(ANIMATION_DELAY*stepIndex)
+                      .attr("cx",function(d){
+                        return (d[0] - xMin) / ((xMax - xMin) || 1) * (width - 2*xMargin) + xMargin;
+                      }).attr("cy", function(d){
+                        return (d[1] - yMin) / ((yMax - yMin) || 1) * (height - 2*yMargin) + yMargin;
+                      }).attr("r", radius)
+                      .attr("class", "animation-points")
+                      .style("fill", "red");
+
+    animationPoints.exit().remove();
+
+
+    });
+
+
   };
 
   self.getConvexHull = function(){
 
-  var xhttp = new XMLHttpRequest();
-  var url = 'https://upxfqmcp10.execute-api.us-east-1.amazonaws.com/prod/quickconvexhull';
+    var xhttp = new XMLHttpRequest();
+    var url = 'https://upxfqmcp10.execute-api.us-east-1.amazonaws.com/prod/quickconvexhull';
 
-  if(xhttp) {
-    xhttp.open('POST', url, true);
+    if(xhttp) {
+      xhttp.open('POST', url, true);
 
-    //invocation.withCredentials = false;
-    xhttp.onreadystatechange = function(){
+      //invocation.withCredentials = false;
+      xhttp.onreadystatechange = function(){
+        if(xhttp.readyState === XMLHttpRequest.DONE && xhttp.status === 200){
+          var response = xhttp.responseText.replace(/\"/g, "");
+          console.log(response);
+          var hullEdges = response.split(';')
+            .map(function(pointString){
+            return pointString.split(",").map(function(d){return parseFloat(d);});
+          });
+
+          self.hullEdges(hullEdges);
+          self.steps([]);
+          self.draw();
+
+        }
+
+      };
+      var message = "\"" + self.pointString().replace(/\n/g, ";") + "\"";
+      xhttp.send(message);
+    }
+
+    };
+
+
+
+    self.getConvexHullAnimation = function(){
+
+      var xhttp = new XMLHttpRequest();
+      var url = 'https://upxfqmcp10.execute-api.us-east-1.amazonaws.com/prod/quickconvexhull';
+
+      if(xhttp) {
+      xhttp.open('POST', url, true);
+
+      //invocation.withCredentials = false;
+      xhttp.onreadystatechange = function(){
       if(xhttp.readyState === XMLHttpRequest.DONE && xhttp.status === 200){
-        var response = xhttp.responseText.replace(/\"/g, "");
-        console.log(response);
-        var hullEdges = response.split(';')
-          .map(function(pointString){
-          return pointString.split(",").map(function(d){return parseFloat(d);});
-        });
-        self.hullEdges(hullEdges);
-        self.draw();
+      var response = xhttp.responseText.replace(/\"/g, "");
+      console.log(response);
+
+
+      var steps = response.split('@')
+                          .map(function(hullString){
+                            return hullString.split(';')
+                              .map(function(pointString){
+                                return pointString.split(",").map(function(d){return parseFloat(d);});
+                              });
+                          });
+
+
+
+      self.steps(steps);
+      self.hullEdges([]);
+      self.draw();
 
       }
 
-    };
-    xhttp.send("\"" + self.pointString().replace(/\n/g, ";") + "\"");
+      };
+      var message = "\"" + "animate" + self.pointString().replace(/\n/g, ";") + "\"";
+      xhttp.send(message);
+      }
+
+      };
+
   }
-
-  };
-
-}
 
 
 
